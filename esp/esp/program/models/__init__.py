@@ -70,6 +70,7 @@ from esp.tagdict.models import Tag
 from esp.users.models import ContactInfo, StudentInfo, TeacherInfo, EducatorInfo, GuardianInfo, ESPUser, Record
 from esp.utils.expirable_model import ExpirableModel
 from esp.utils.formats import format_lazy
+from esp.utils import cmp
 from esp.qsdmedia.models import Media
 
 from phonenumber_field.modelfields import PhoneNumberField
@@ -193,29 +194,45 @@ class ArchiveClass(models.Model):
     #def __str__(self):
     #    return '"%s" taught by "%s"' % (self.title, self.teacher)
 
+    def _cmp_key(self):
+        return (str(self.year or ''), str(self.date or ''), str(self.title or ''))
+
     def __cmp__(self, other):
-        test = cmp(self.year, other.year)
-        if test != 0:
-            return test
-        test = cmp(self.date, other.date)
-        if test != 0:
-            return test
-        test = cmp(self.title, other.title)
-        if test != 0:
-            return test
-        return 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        k1 = self._cmp_key()
+        k2 = other._cmp_key()
+        return cmp(k1, k2)
+
     def __lt__(self, other):
-        return self.__cmp__(other) < 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() < other._cmp_key()
+
     def __gt__(self, other):
-        return self.__cmp__(other) > 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() > other._cmp_key()
+
     def __eq__(self, other):
-        return self.__cmp__(other) == 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() == other._cmp_key()
+
     def __le__(self, other):
-        return self.__cmp__(other) <= 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() <= other._cmp_key()
+
     def __ge__(self, other):
-        return self.__cmp__(other) >= 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() >= other._cmp_key()
+
     def __ne__(self, other):
-        return self.__cmp__(other) != 0
+        if not isinstance(other, ArchiveClass):
+            return NotImplemented
+        return self._cmp_key() != other._cmp_key()
 
     def heading(self):
         if len(self.date) > 1:
@@ -237,30 +254,41 @@ class ArchiveClass(models.Model):
         return t.render({'class': self})
 
     def num_students(self):
-        if self.student_ids is not None:
-            return len(self.student_ids.strip('|').split('|')) + self.num_old_students
+        if self.student_ids:
+            ids = [x for x in self.student_ids.strip('|').split('|') if x]
+            return len(ids) + self.num_old_students
         else:
             return self.num_old_students
 
     def add_students(self, users):
-        if self.student_ids is not None:
-            self.student_ids += f'{"|".join([str(u.id) for u in users])}|'
+        if not users:
+            return
+        user_ids = '|'.join(str(u.id) for u in users)
+        if self.student_ids:
+            self.student_ids += f'{user_ids}|'
         else:
-            self.student_ids = f'|{"|".join([str(u.id) for u in users])}|'
+            self.student_ids = f'|{user_ids}|'
 
     def add_teachers(self, users):
-        if self.teacher_ids is not None:
-            self.teacher_ids += f'{"|".join([str(u.id) for u in users])}|'
+        if not users:
+            return
+        user_ids = '|'.join(str(u.id) for u in users)
+        if self.teacher_ids:
+            self.teacher_ids += f'{user_ids}|'
         else:
-            self.teacher_ids = f'|{"|".join([str(u.id) for u in users])}|'
+            self.teacher_ids = f'|{user_ids}|'
 
     def students(self):
-        useridlist = [int(x) for x in self.student_ids.strip('|').split('|')]
-        return ESPUser.objects.filter(id__in = useridlist)
+        if not self.student_ids:
+            return ESPUser.objects.none()
+        useridlist = [int(x) for x in self.student_ids.strip('|').split('|') if x]
+        return ESPUser.objects.filter(id__in=useridlist)
 
     def teachers(self):
-        useridlist = [int(x) for x in self.teacher_ids.strip('|').split('|')]
-        return ESPUser.objects.filter(id__in = useridlist)
+        if not self.teacher_ids:
+            return ESPUser.objects.none()
+        useridlist = [int(x) for x in self.teacher_ids.strip('|').split('|') if x]
+        return ESPUser.objects.filter(id__in=useridlist)
 
     @staticmethod
     def getForUser(user):

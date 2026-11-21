@@ -38,7 +38,12 @@ logger = logging.getLogger(__name__)
 
 from esp.accounting.models import LineItemType
 from esp.cal.models import EventType, Event
-from esp.program.models import Program, ClassSection, RegistrationProfile, ScheduleMap, ProgramModule, StudentRegistration, RegistrationType, ClassCategories, ClassSubject, BooleanExpression, ScheduleConstraint, ScheduleTestOccupied, ScheduleTestCategory, ScheduleTestSectionList
+from esp.program.models import (
+    Program, ClassSection, RegistrationProfile, ScheduleMap, ProgramModule,
+    StudentRegistration, RegistrationType, ClassCategories, ClassSubject,
+    BooleanExpression, ScheduleConstraint, ScheduleTestOccupied, ScheduleTestCategory,
+    ScheduleTestSectionList, ArchiveClass
+)
 from esp.qsd.models import QuasiStaticData
 from esp.resources.models import Resource, ResourceRequest, ResourceType
 from esp.survey.models import Question, QuestionType
@@ -2859,3 +2864,63 @@ class ProgramCreationFormValidationTest(TestCase):
         errors = self.form_errors()
         for field_name in ('program_type', 'term', 'term_friendly'):
             self.assertNotIn(field_name, errors)
+
+
+class ArchiveClassTests(TestCase):
+    def test_archive_class_comparison(self):
+        c1 = ArchiveClass(year='2023', date='Spring', title='Intro to Physics')
+        c2 = ArchiveClass(year='2024', date='Fall', title='Advanced Math')
+        c3 = ArchiveClass(year='2024', date='Spring', title='Biology 101')
+        c4 = ArchiveClass(year='2024', date='Spring', title='Chemistry 101')
+        c4_dup = ArchiveClass(year='2024', date='Spring', title='Chemistry 101')
+
+        # Rich comparisons
+        self.assertTrue(c1 < c2)
+        self.assertTrue(c1 <= c2)
+        self.assertTrue(c2 > c1)
+        self.assertTrue(c2 >= c1)
+        self.assertFalse(c1 == c2)
+        self.assertTrue(c1 != c2)
+
+        # Ordering by year, date, title
+        self.assertTrue(c2 < c3)  # 'Fall' < 'Spring'
+        self.assertTrue(c3 < c4)  # 'Biology 101' < 'Chemistry 101'
+        self.assertTrue(c4 == c4_dup)
+
+        # Sorting a list of ArchiveClass instances (verifies Python 3 compatibility and no NameError: cmp)
+        classes = [c2, c4, c1, c3]
+        sorted_classes = sorted(classes)
+        self.assertEqual(sorted_classes, [c1, c2, c3, c4])
+
+        # Type safety: comparing against incompatible types raises TypeError
+        with self.assertRaises(TypeError):
+            _ = c1 < "invalid"
+
+    def test_archive_class_empty_students_and_teachers(self):
+        c = ArchiveClass(year='2024', date='Spring', title='Empty Class', student_ids='', teacher_ids='')
+        # Should not raise ValueError or AttributeError
+        self.assertEqual(c.students().count(), 0)
+        self.assertEqual(c.teachers().count(), 0)
+        self.assertEqual(c.num_students(), 0)
+
+        c_none = ArchiveClass(year='2024', date='Spring', title='Null Class', student_ids=None, teacher_ids=None)
+        self.assertEqual(c_none.students().count(), 0)
+        self.assertEqual(c_none.teachers().count(), 0)
+        self.assertEqual(c_none.num_students(), 0)
+
+    def test_archive_class_with_students_and_teachers(self):
+        u1 = make_user('Student', username='arch_s1')
+        u2 = make_user('Teacher', username='arch_t1')
+        c = ArchiveClass.objects.create(
+            year='2024', date='Spring', title='Populated Class',
+            program='Splash', category='Academic', teacher='Teacher 1', description='Desc',
+            student_ids='', teacher_ids=''
+        )
+        c.add_students([u1])
+        c.add_teachers([u2])
+        c.save()
+
+        self.assertIn(u1, c.students())
+        self.assertIn(u2, c.teachers())
+        self.assertEqual(c.num_students(), 1)
+
